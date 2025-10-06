@@ -1,7 +1,5 @@
 import webrtcvad
 import collections
-import sys
-import signal
 import pyaudio
 import numpy as np
 
@@ -14,8 +12,8 @@ FRAME_SIZE = int(RATE * FRAME_DURATION / 1000) # 프레임 크기 (샘플 수)
 CHUNK_SIZE = FRAME_SIZE * 1 # 청크 크기
 
 # ===== 에너지 게이트 파라미터 =====
-EMA_ALPHA = 0.05         # 소음 바닥값 학습 속도(0.03~0.07 권장)
-ENERGY_MARGIN = 3.5       # 바닥 대비 몇 배면 “소리”로 볼지(3.0~5.0 권장)
+EMA_ALPHA = 0.02           # 소음 바닥값 학습 속도(0.03~0.07 권장)
+ENERGY_MARGIN = 10.0       # 바닥 대비 몇 배면 “소리”로 볼지(3.0~5.0 권장)
 INITIAL_NOISE_FLOOR = 0.003  # 초기 바닥값(RMS). 너무 크면 시작이 둔감, 너무 작으면 예민
 EPS = 1e-12
 
