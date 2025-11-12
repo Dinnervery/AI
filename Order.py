@@ -302,13 +302,21 @@ class DialogueManager:
         self.state = State.START
         self.order = Order()
         self.use_llm = use_llm and OPENAI_OK
+        self._clicked = False
 
     # 인터페이스
     def emit(self, action: str):
         print(f"[ACTION] {action}")
+        if action.strip().startswith("ClickOrder("):
+            raise KeyboardInterrupt
 
     def say(self, msg: str):
         print(f"시스템: {msg}")
+
+    def _maybe_click_order(self):
+        if not self._clicked:
+            self.emit("ClickOrder()")
+            self._clicked = True
 
     # 메인 핸들러
     def handle_user(self, user_text: str):
@@ -345,7 +353,7 @@ class DialogueManager:
                 self.state = State.GOT_DINNER
                 return
             if is_recommend_request(user_text):
-                self.say("무슨 기념일이신지 한 마디로 알려주시면 2~3가지로 제안드리겠습니다.")
+                self.say("무슨 기념일이신지 한 마디로 알려주시면 1~2가지로 제안드리겠습니다.")
                 return
             if any(k in user_text for k in ["생일","생신","기념일","프로포즈","졸업","승진","돌잔치","환갑"]):
                 self.say("축하합니다. 프렌치 디너 또는 샴페인 축제 디너를 추천드립니다. 어떤 메뉴로 하시겠습니까?")
@@ -415,6 +423,7 @@ class DialogueManager:
                     return
                 else:
                     self.say(self.final_confirmation())
+                    self._maybe_click_order()        
                     self.state = State.END
                     return
             # 추가 변경/선택
@@ -445,6 +454,7 @@ class DialogueManager:
                 return
             if maybe_date:
                 self.say(self.final_confirmation())
+                self._maybe_click_order() 
                 self.state = State.END
                 return
             self.say("변경이 없으시면 '없어요'라고 말씀해 주세요. 변경이 있으면 항목과 수량을 말씀해 주세요.")
@@ -453,6 +463,7 @@ class DialogueManager:
         if self.state == State.ASK_DELIVERY_DATE:
             if maybe_date:
                 self.say(self.final_confirmation())
+                self._maybe_click_order()
                 self.state = State.END
                 return
             self.say("예: '12월 3일', '내일', '모레'처럼 말씀해 주세요.")
