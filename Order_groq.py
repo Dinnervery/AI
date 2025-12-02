@@ -3,7 +3,7 @@ import re, json, wave, tempfile, collections
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, List
 
 # ===== 오디오 / VAD / STT =====
 import numpy as np
@@ -95,6 +95,8 @@ ITEM_ALIASES = {
     "바케트빵": "BAGUETTE",
     "champagne": "CHAMPAGNE",
     "샴페인": "CHAMPAGNE",
+    "coffee" : "COFFEE",
+    "커피" : "COFFEE",
     "coffee pot": "COFFEE_POT",
     "커피 포트": "COFFEE_POT",
     "커피포트": "COFFEE_POT",
@@ -165,7 +167,7 @@ class Order:
             ensure("WINE", 1)
             ensure("STEAK", 2)
         elif self.dinner == "French":
-            ensure("WINE", 1); ensure("SALAD", 1); ensure("STEAK", 1)
+            ensure("WINE", 1); ensure("SALAD", 1); ensure("STEAK", 1); ensure("COFFEE", 1)
         elif self.dinner == "English":
             ensure("SCRAMBLED_EGGS", 1); ensure("BACON", 1); ensure("BREAD", 1); ensure("STEAK", 1)
         elif self.dinner == "Valentine":
@@ -188,7 +190,7 @@ class Order:
             name_ko = {
                 "BAGUETTE":"바게트빵","CHAMPAGNE":"샴페인","COFFEE_POT":"커피 포트",
                 "WINE":"와인","STEAK":"스테이크","SALAD":"샐러드","BACON":"베이컨",
-                "BREAD":"빵","SCRAMBLED_EGGS":"스크램블 에그"
+                "BREAD":"빵","SCRAMBLED_EGGS":"스크램블 에그", "COFFEE":"커피"
             }
             qtxt = [f"{name_ko.get(k,k)} {v}개" for k,v in self.qty.items()]
             parts.append(", ".join(qtxt))
@@ -212,7 +214,7 @@ SYSTEM_PROMPT = r"""
 [허용값]
 - dinner: Valentine(발렌타인), French(프렌치), English(잉글리시), ChampagneFeast(샴페인 축제)
 - style: Simple(심플), Grand(그랜드), Deluxe(디럭스)
-- item: BAGUETTE(바게트), CHAMPAGNE(샴페인), COFFEE_POT(커피 포트), WINE(와인), STEAK(스테이크), SALAD(샐러드), BACON(베이컨), BREAD(빵), SCRAMBLED_EGGS(스크램블 에그)
+- item: BAGUETTE(바게트), CHAMPAGNE(샴페인), COFFEE_POT(커피 포트), WINE(와인), STEAK(스테이크), SALAD(샐러드), BACON(베이컨), BREAD(빵), SCRAMBLED_EGGS(스크램블 에그), COFFEE(커피)
 
 [액션 스키마 - 반드시 이 형식으로만 출력]
 액션이 필요하면 actions 배열에 다음 중 하나를 추가:
@@ -256,14 +258,17 @@ SYSTEM_PROMPT = r"""
 3) dinner 확정 시 반드시 SelectDinner 액션을 actions 배열에 포함.
 4) style 확정 시 반드시 SelectStyle 액션을 actions 배열에 포함.
 5) 수량 변경 시 ChangeQuantity 액션을 actions 배열에 포함. value는 최종 수량(절대치).
-6) 배송일 확정 시 반드시 SetDeliveryDate 액션을 actions 배열에 포함. 형식: YYYY-MM-DD
-7) missing_info는 아래 중 정확히 하나 또는 빈 배열만 허용:
+6) 수량 확정 시 추가적인 ACTION 없이 배송일 질문.
+7) 배송일 확정 시 반드시 SetDeliveryDate 액션을 actions 배열에 포함. 형식: YYYY-MM-DD
+8) 배송일은 반드시 현재보다 미래의 일자.
+9) missing_info는 아래 중 정확히 하나 또는 빈 배열만 허용:
    ["dinner"] | ["style"] | ["quantity"] | ["deliveryDate"] | []
-8) 허용된 값 이외는 출력 금지.  
-9) 반드시 JSON 객체만 출력하고 다른 텍스트는 절대 포함하지 마라.
-10) 같은 질문 재질문 금지
-11) actions 배열은 항상 배열이어야 하며, 액션이 없으면 빈 배열 []
-12) 수량 변경 시, 사용자가 말한 아이템만 변경하고 나머지는 유지.
+10) 허용된 값 이외는 출력 금지.  
+11) 반드시 JSON 객체만 출력하고 다른 텍스트는 절대 포함하지 마라.
+12) 같은 질문 재질문 금지
+13) actions 배열은 항상 배열이어야 하며, 액션이 없으면 빈 배열 []
+14) 수량 변경 시, 사용자가 말한 아이템만 변경하고 나머지는 유지.
+15) 커피 1포트는 커피 5잔과 같음.
 
 [출력 예시 1 - dinner 추천 (액션 없음)]
 사용자: "너가 추천해주라"
@@ -348,7 +353,17 @@ SYSTEM_PROMPT = r"""
   "missing_info": ["deliveryDate"]
 }
 
-[출력 예시 11 - 수량 변경 안 함 (액션 없음)]
+[출력 예시 11 - 수량 변경 (액션 있음)]
+사용자: "와인 2잔으로 해줘"
+{
+  "reply_ko": "와인 2잔으로 변경되었습니다. 추가 변경 사항 있으실까요?",
+  "actions": [
+    {"type": "ChangeQuantity", "item": "WINE", "value": 2},
+  ],
+  "missing_info": ["deliveryDate"]
+}
+
+[출력 예시 12 - 수량 변경 안 함 (액션 없음)]
 사용자: "변경 없어"
 {
   "reply_ko": "알겠습니다. 배송일은 언제로 하시겠습니까?",
@@ -356,7 +371,7 @@ SYSTEM_PROMPT = r"""
   "missing_info": ["deliveryDate"]
 }
 
-[출력 예시 12 - 배송일 설정 (액션 있음)]
+[출력 예시 13 - 배송일 설정 (액션 있음)]
 사용자: "다음주 화요일"
 {
   "reply_ko": "다음주 화요일로 배송 예약되었습니다.",
@@ -394,7 +409,7 @@ def llm_decide(user_text: str, order: Order, history: List[dict], max_retries: i
     ok_enums = {
         "dinners": {"Valentine","French","English","ChampagneFeast"},
         "styles": {"Simple","Grand","Deluxe"},
-        "items": {"BAGUETTE","CHAMPAGNE","COFFEE_POT","WINE","STEAK","SALAD","BACON","BREAD","SCRAMBLED_EGGS"},
+        "items": {"BAGUETTE","CHAMPAGNE","COFFEE_POT","COFFEE", "WINE","STEAK","SALAD","BACON","BREAD","SCRAMBLED_EGGS"},
         "missing": {"dinner","style","quantity","deliveryDate"},
     }
 
