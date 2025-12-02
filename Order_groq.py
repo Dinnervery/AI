@@ -10,12 +10,6 @@ import numpy as np
 import webrtcvad
 import pyaudio
 
-try:
-    from faster_whisper import WhisperModel
-    WHISPER_AVAILABLE = True
-except Exception:
-    WHISPER_AVAILABLE = False
-
 # ===== Groq API =====
 from groq import Groq
 from dotenv import load_dotenv
@@ -237,8 +231,8 @@ SYSTEM_PROMPT = r"""
 
 [대화 목표 순서]
 1. dinner 추천/선택 → 사용자 확정 후 SelectDinner 액션 실행
-2. style 추천/선택 → 사용자 확정 후 SelectStyle 액션 실행
-3. quantity 확인 및 변경 → 변경 시 ChangeQuantity 액션 실행
+2. quantity 확인 및 변경 → 변경 시 ChangeQuantity 액션 실행
+3. style 추천/선택 → 사용자 확정 후 SelectStyle 액션 실행
 4. deliveryDate 확인 및 설정 → 확정 후 SetDeliveryDate 액션 실행
 5. 결제 안내 및 주문 확정 멘트
 
@@ -259,11 +253,11 @@ SYSTEM_PROMPT = r"""
 3) dinner 확정 시 반드시 SelectDinner 액션을 actions 배열에 포함.
 4) style 확정 시 반드시 SelectStyle 액션을 actions 배열에 포함.
 5) 수량 변경 시 ChangeQuantity 액션을 actions 배열에 포함. value는 최종 수량(절대치).
-6) 수량 확정 시 추가적인 ACTION 없이 배송일 질문.
+6) 수량 확정 시 추가적인 ACTION 없이 스타일 질문.
 7) 배송일 확정 시 반드시 SetDeliveryDate 액션을 actions 배열에 포함. 형식: YYYY-MM-DD
 8) 배송일은 반드시 현재보다 미래의 일자.
 9) missing_info는 아래 중 정확히 하나 또는 빈 배열만 허용:
-   ["dinner"] | ["style"] | ["quantity"] | ["deliveryDate"] | []
+   ["dinner"] | ["quantity"] | ["style"] | ["deliveryDate"] | []
 10) 허용된 값 이외는 출력 금지.  
 11) 반드시 JSON 객체만 출력하고 다른 텍스트는 절대 포함하지 마라.
 12) 같은 질문 재질문 금지
@@ -271,9 +265,9 @@ SYSTEM_PROMPT = r"""
 14) 수량 변경 시, 사용자가 말한 아이템만 변경하고 나머지는 유지.
 15) 뒤로가기 요청:
     - 사용자가 "이전으로", "전 단계", "다시", "이전", "돌아가", "취소" 등의 표현을 하면 GoBack 액션 실행.
-    - style 단계에서 GoBack → dinner 단계로 돌아가기 (dinner 재선택 가능)
-    - quantity 단계에서 GoBack → style 단계로 돌아가기 (style 재선택 가능)
-    - deliveryDate 단계에서 GoBack → quantity 단계로 돌아가기 (수량 재변경 가능)
+    - style 단계에서 GoBack → quantity 단계로 돌아가기 (수량 재변경 가능)
+    - quantity 단계에서 GoBack → dinner 단계로 돌아가기 (dinner 재선택 가능)
+    - deliveryDate 단계에서 GoBack → style 단계로 돌아가기 (style 재선택 가능)
     - GoBack 실행 시 이전 선택값을 유지하고, 이전 단계의 선택지를 다시 제시.
     - 사용자가 선택지 혹은 수량을 변경하면 액션 수행.
 16) 커피 1포트는 커피 5잔과 같음.
@@ -297,17 +291,17 @@ SYSTEM_PROMPT = r"""
 [출력 예시 3 - dinner 확정 (액션 있음)]
 사용자: "그거로 해"
 {
-  "reply_ko": "프렌치 디너로 확정하겠습니다. 어떤 스타일로 준비할까요?",
+  "reply_ko": "프렌치 디너로 확정하겠습니다. 프렌치 디너는 와인 1잔, 샐러드 1개, 스테이크 1개, 커피 1잔으로 구성되어 있습니다. 변경하실 항목이 있으시면 알려주세요.",
   "actions": [{"type": "SelectDinner", "value": "French"}],
-  "missing_info": ["style"]
+  "missing_info": ["quantity"]
 }
 
 [출력 예시 4 - 직접 선택 (액션 있음)]
 사용자: "프렌치 디너로 할래"
 {
-  "reply_ko": "프렌치 디너로 확정하겠습니다. 어떤 스타일로 준비할까요?",
+  "reply_ko": "프렌치 디너로 확정하겠습니다. 프렌치 디너는 와인 1잔, 샐러드 1개, 스테이크 1개, 커피 1잔으로 구성되어 있습니다. 변경하실 항목이 있으시면 알려주세요.",
   "actions": [{"type": "SelectDinner", "value": "French"}],
-  "missing_info": ["style"]
+  "missing_info": ["quantity"]
 }
 
 [출력 예시 5 - 디너 선택지 설명 (액션 없음)]
@@ -318,39 +312,15 @@ SYSTEM_PROMPT = r"""
   "missing_info": ["dinner"]
 }
 
-[출력 예시 6 - 스타일 선택지 설명 (액션 없음)]
-사용자: "스타일 뭐 뭐 있는데?"
+[출력 예시 6 - 수량 확인 (액션 없음)]
+사용자: (dinner가 확정된 직후)
 {
-  "reply_ko": "스타일은 세 가지가 있습니다.\n- Simple(심플): 플라스틱 접시/컵, 종이 냅킨으로 캐주얼하고 경제적입니다.\n- Grand(그랜드): 도자기 접시/컵, 흰색 면 냅킨으로 고급스러운 분위기를 연출합니다.\n- Deluxe(디럭스): 꽃병, 도자기 접시/컵, 린넨 냅킨으로 최고급 세팅입니다.\n어느 것으로 하시겠어요?",
-  "actions": [],
-  "missing_info": ["style"]
-}
-
-[출력 예시 7 - style 추천 (액션 없음)]
-사용자: "너가 추천해줘"
-{
-  "reply_ko": "발렌타인 디너에 어울리는 스타일은 디럭스 스타일입니다. 꽃병과 도자기 접시/컵, 린넨 냅킨이 포함되어 최고급 세팅을 제공합니다. 디럭스 스타일이 어떨까요?",
-  "actions": [],
-  "missing_info": ["style"]
-}
-
-[출력 예시 8 - style 확정 (액션 있음)]
-사용자: "디럭스로 해"
-{
-  "reply_ko": "디럭스 스타일로 준비하겠습니다.",
-  "actions": [{"type": "SelectStyle", "value": "Deluxe"}],
-  "missing_info": ["quantity"]
-}
-
-[출력 예시 9 - 수량 확인 (액션 없음)]
-사용자: (style이 확정된 직후)
-{
-  "reply_ko": "발렌타인 디너는 와인 1잔과 스테이크 1개로 구성되어 있습니다. 변경하실 항목이 있으시면 알려주세요.",
+  "reply_ko": "프렌치 디너는 와인 1잔, 샐러드 1개, 스테이크 1개, 커피 1잔으로 구성되어 있습니다. 변경하실 항목이 있으시면 알려주세요.",
   "actions": [],
   "missing_info": ["quantity"]
 }
 
-[출력 예시 10 - 수량 변경 (액션 있음)]
+[출력 예시 7 - 수량 변경 (액션 있음)]
 사용자: "와인 2잔, 스테이크 2개로 해줘"
 {
   "reply_ko": "와인 2잔, 스테이크 2개로 변경되었습니다. 추가 변경 사항 있으실까요?",
@@ -358,24 +328,48 @@ SYSTEM_PROMPT = r"""
     {"type": "ChangeQuantity", "item": "WINE", "value": 2},
     {"type": "ChangeQuantity", "item": "STEAK", "value": 2}
   ],
-  "missing_info": ["deliveryDate"]
+  "missing_info": ["style"]
 }
 
-[출력 예시 11 - 수량 변경 (액션 있음)]
+[출력 예시 8 - 수량 변경 (액션 있음)]
 사용자: "와인 2잔으로 해줘"
 {
   "reply_ko": "와인 2잔으로 변경되었습니다. 추가 변경 사항 있으실까요?",
   "actions": [
-    {"type": "ChangeQuantity", "item": "WINE", "value": 2},
+    {"type": "ChangeQuantity", "item": "WINE", "value": 2}
   ],
-  "missing_info": ["deliveryDate"]
+  "missing_info": ["style"]
 }
 
-[출력 예시 12 - 수량 변경 안 함 (액션 없음)]
+[출력 예시 9 - 수량 변경 안 함 (액션 없음)]
 사용자: "변경 없어"
 {
-  "reply_ko": "알겠습니다. 배송일은 언제로 하시겠습니까?",
+  "reply_ko": "알겠습니다. 어떤 스타일로 준비할까요?",
   "actions": [],
+  "missing_info": ["style"]
+}
+
+[출력 예시 10 - 스타일 선택지 설명 (액션 없음)]
+사용자: "스타일 뭐 뭐 있는데?"
+{
+  "reply_ko": "스타일은 세 가지가 있습니다.\n- Simple(심플): 플라스틱 접시/컵, 종이 냅킨으로 캐주얼하고 경제적입니다.\n- Grand(그랜드): 도자기 접시/컵, 흰색 면 냅킨으로 고급스러운 분위기를 연출합니다.\n- Deluxe(디럭스): 꽃병, 도자기 접시/컵, 린넨 냅킨으로 최고급 세팅입니다.\n어느 것으로 하시겠어요?",
+  "actions": [],
+  "missing_info": ["style"]
+}
+
+[출력 예시 11 - style 추천 (액션 없음)]
+사용자: "너가 추천해줘"
+{
+  "reply_ko": "프렌치 디너에 어울리는 스타일은 디럭스 스타일입니다. 꽃병과 도자기 접시/컵, 린넨 냅킨이 포함되어 최고급 세팅을 제공합니다. 디럭스 스타일이 어떨까요?",
+  "actions": [],
+  "missing_info": ["style"]
+}
+
+[출력 예시 12 - style 확정 (액션 있음)]
+사용자: "디럭스로 해"
+{
+  "reply_ko": "디럭스 스타일로 준비하겠습니다. 배송일은 언제로 하시겠습니까?",
+  "actions": [{"type": "SelectStyle", "value": "Deluxe"}],
   "missing_info": ["deliveryDate"]
 }
 
@@ -472,6 +466,9 @@ def llm_decide(user_text: str, order: Order, history: List[dict], max_retries: i
                     v = str(a.get("value"))
                     if re.match(r"^\d{4}-\d{2}-\d{2}$", v):
                         cleaned_actions.append({"type":"SetDeliveryDate","value":v})
+
+                elif t == "GoBack":
+                    cleaned_actions.append({"type":"GoBack"})
 
             data["actions"] = cleaned_actions
 
@@ -600,12 +597,34 @@ class DialogueManager:
                     self.order.delivery_date = v
                     self.emit(f"SetDeliveryDate({v})")
 
+            elif t == "GoBack":
+                self._handle_goback(miss)
+                self.emit("GoBack()")
+
         # 3) missing_info 기반 상태 힌트(대화는 LLM이 알아서 하므로 상태는 최소만)
         if "deliveryDate" in miss:
             self.state = State.ASK_DELIVERY_DATE
         else:
             self.state = State.RUNNING
 
+    def _handle_goback(self, next_missing: List[str]):
+        if not next_missing:
+            return
+        
+        target = next_missing[0] if next_missing else None
+        
+        if target == "dinner":
+            print("[DEBUG] dinner 단계로 돌아갔습니다.")
+            
+        elif target == "style":
+            print("[DEBUG] style 단계로 돌아갔습니다.")
+            
+        elif target == "quantity":
+            print("[DEBUG] quantity 단계로 돌아갔습니다.")
+            
+        elif target == "deliveryDate":
+            print("[DEBUG] deliveryDate 단계로 돌아갔습니다.")
+    
     def final_confirmation(self) -> str:
         if self.order.delivery_date:
             y,m,d = self.order.delivery_date.split("-")
@@ -627,24 +646,20 @@ def write_wav_int16(path: Path, pcm_bytes: bytes, channels=1, rate=16000):
         wf.setframerate(rate)
         wf.writeframes(pcm_bytes)
 
-# ===== Whisper 모델 =====
-_WHISPER_MODEL: Optional[WhisperModel] = None
+# ===== 음성 인식 모델 =====
+def transcribe_with_groq(wav_path: str, language="ko") -> str:
+    client = get_groq_client()
 
-def get_whisper_model():
-    global _WHISPER_MODEL
-    if not WHISPER_AVAILABLE:
-        print("[경고] faster-whisper 미설치. STT 비활성화.")
-        return None
-    if _WHISPER_MODEL is None:
-        print("🧠 Whisper 모델 로드 중... (medium, int8, CPU)")
-        _WHISPER_MODEL = WhisperModel("medium", device="cpu", compute_type="int8")
-    return _WHISPER_MODEL
+    with open(wav_path, "rb") as f:
+        audio_bytes = f.read()
 
-def transcribe_with_whisper(model: WhisperModel, wav_path: str, language="ko") -> str:
-    if model is None:
-        return ""
-    segs, info = model.transcribe(wav_path, language=language, vad_filter=False)
-    return "".join(s.text for s in segs).strip()
+    resp = client.audio.transcriptions.create(
+        file=("audio.wav", audio_bytes),
+        model="whisper-large-v3",
+        language=language
+    )
+
+    return resp.text.strip()
 
 # ===== 메인 루프 =====
 DM = DialogueManager(use_llm=True)
@@ -660,9 +675,6 @@ def run_loop():
     audio = pyaudio.PyAudio()
     stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE,
                         input=True, frames_per_buffer=CHUNK)
-
-    # Whisper 선로딩
-    model = get_whisper_model()
 
     # Groq 클라이언트 선로딩 + 워밍업
     if DM.use_llm:
@@ -720,11 +732,11 @@ def run_loop():
                     hang += 1
                 if hang >= HANGOVER_FRAMES:
                     print("\n■ 발화 종료")
-                    if len(utt) > 0 and model is not None:
+                    if len(utt) > 0:
                         with tempfile.TemporaryDirectory() as td:
                             wav_path = Path(td)/"utt.wav"
                             write_wav_int16(wav_path, bytes(utt), channels=CHANNELS, rate=RATE)
-                            text = transcribe_with_whisper(model, str(wav_path), language="ko")
+                            text = transcribe_with_groq(str(wav_path), language="ko")
                             if text:
                                 on_transcript(text)
                     triggered = False; hang = 0; utt.clear()
@@ -757,14 +769,3 @@ def run_text_loop():
 
 if __name__ == "__main__":
     run_text_loop()
-
-
-
-
-
-
-
-
-
-
-
