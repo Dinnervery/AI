@@ -222,6 +222,7 @@ SYSTEM_PROMPT = r"""
 - {"type": "SelectStyle", "value": "Simple|Grand|Deluxe"}
 - {"type": "ChangeQuantity", "item": "ITEM명", "value": 최종수량(숫자)}
 - {"type": "SetDeliveryDate", "value": "YYYY-MM-DD"}
+- {"type": "GoBack"}
 
 [디너 설명]
 - Valentine dinner: 하트/큐피드 장식 접시, 냅킨, 와인 1잔, 스테이크 1개 (연인/기념일 추천)
@@ -268,7 +269,14 @@ SYSTEM_PROMPT = r"""
 12) 같은 질문 재질문 금지
 13) actions 배열은 항상 배열이어야 하며, 액션이 없으면 빈 배열 []
 14) 수량 변경 시, 사용자가 말한 아이템만 변경하고 나머지는 유지.
-15) 커피 1포트는 커피 5잔과 같음.
+15) 뒤로가기 요청:
+    - 사용자가 "이전으로", "전 단계", "다시", "이전", "돌아가", "취소" 등의 표현을 하면 GoBack 액션 실행.
+    - style 단계에서 GoBack → dinner 단계로 돌아가기 (dinner 재선택 가능)
+    - quantity 단계에서 GoBack → style 단계로 돌아가기 (style 재선택 가능)
+    - deliveryDate 단계에서 GoBack → quantity 단계로 돌아가기 (수량 재변경 가능)
+    - GoBack 실행 시 이전 선택값을 유지하고, 이전 단계의 선택지를 다시 제시.
+    - 사용자가 선택지 혹은 수량을 변경하면 액션 수행.
+16) 커피 1포트는 커피 5잔과 같음.
 
 [출력 예시 1 - dinner 추천 (액션 없음)]
 사용자: "너가 추천해주라"
