@@ -768,4 +768,4 @@ def run_text_loop():
             DM.handle_user(text)
 
 if __name__ == "__main__":
-    run_text_loop()
+    run_loop()
