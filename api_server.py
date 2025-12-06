@@ -7,6 +7,11 @@ from Order_groq import DialogueManager
 
 app = FastAPI()
 
+# FastAPI 예시
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
 # CORS: 나중에 웹/프론트에서 호출할 수 있게 열어두기
 app.add_middleware(
     CORSMiddleware,
