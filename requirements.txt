@@ -5,4 +5,4 @@ webrtcvad
 pyaudio
 fastapi
 uvicorn[standard]
-request
+requests
