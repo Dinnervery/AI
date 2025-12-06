@@ -253,7 +253,7 @@ SYSTEM_PROMPT = r"""
 3) dinner 확정 시 반드시 SelectDinner 액션을 actions 배열에 포함.
 4) style 확정 시 반드시 SelectStyle 액션을 actions 배열에 포함.
 5) 수량 변경 시 ChangeQuantity 액션을 actions 배열에 포함. value는 최종 수량(절대치).
-6) 수량 확정 시 추가적인 ACTION 없이 스타일 질문.
+6) 수량 변경 없을 시 추가적인 ACTION 없이 스타일 질문.
 7) 배송일 확정 시 반드시 SetDeliveryDate 액션을 actions 배열에 포함. 형식: YYYY-MM-DD
 8) 배송일은 반드시 현재보다 미래의 일자.
 9) missing_info는 아래 중 정확히 하나 또는 빈 배열만 허용:
