@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional, List
+import requests
 
 # ===== 오디오 / VAD / STT =====
 import numpy as np
@@ -15,6 +16,8 @@ from groq import Groq
 from dotenv import load_dotenv
 import os   
 load_dotenv()
+
+API_URL = "http://localhost:8000/chat"
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -670,7 +673,15 @@ def on_transcript(text: str):
     if not text:
         return
     print(f"고객: {text}")
-    DM.handle_user(text)
+
+    try:
+        res = requests.post(API_URL, json={"text": text})
+        res.raise_for_status()
+        data = res.json()
+        reply = data.get("reply", "")
+        print("시스템:", reply)
+    except Exception as e:
+        print("[에러] 서버 통신 실패:", e)
 
 def run_loop():
     vad = webrtcvad.Vad(3)
