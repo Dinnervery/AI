@@ -3,3 +3,5 @@ python-dotenv
 numpy
 webrtcvad
 pyaudio
+fastapi
+uvicorn[standard]
