@@ -515,50 +515,52 @@ class DialogueManager:
             self.emit("ClickOrder()")
             self._clicked = True
 
-    def handle_user(self, user_text: str):
+    def handle_user(self, user_text: str) -> str:
         user_text = (user_text or "").strip()
 
-        # START 진입 시: 첫 턴도 LLM이 자연스럽게 시작하도록 트리거 문장 제공
+        # START 진입
         if self.state == State.START:
             self.state = State.RUNNING
             user_text = user_text or "대화를 시작합니다."
 
-        # 사용자가 말한 배송일 후보는 코드에서도 미리 잡아 context를 강화
+        # 배송일 후보 미리 파싱
         maybe_date = parse_delivery_date(user_text)
         if maybe_date:
             self.order.delivery_date = maybe_date
 
         if not self.use_llm:
-            self.say("현재 LLM이 비활성화돼 있습니다. 설정을 확인해 주세요.")
-            return
+            msg = "현재 LLM이 비활성화돼 있습니다. 설정을 확인해 주세요."
+            self.say(msg)
+            return msg
 
-        # ✅ 매 턴 LLM 호출(대화 기록 포함)
         data = llm_decide(user_text, self.order, self.history)
         if not data:
-            # LLM이 JSON을 계속 못 내면 유도 멘트
-            self.say("입력을 잘 이해하지 못했습니다. 조금 더 구체적으로 다시 말씀해 주세요.")
-            return
+            msg = "입력을 잘 이해하지 못했습니다. 조금 더 구체적으로 다시 말씀해 주세요."
+            self.say(msg)
+            return msg
 
-        # ---- LLM 결정 적용 (reply 출력 + actions 반영 + 최소 상태 힌트) ----
+        # LLM 결정 적용
         self._apply_llm_decision(data)
 
-        # ✅ 히스토리 누적: user → assistant
         reply = data.get("reply_ko") or ""
         self.history.append({"role": "user", "content": user_text})
         if reply:
             self.history.append({"role": "assistant", "content": reply})
 
-        # ✅ 히스토리 길이 제한(최근 N개 메시지만 유지)
         if len(self.history) > self.history_max:
             self.history = self.history[-self.history_max:]
 
-        # ✅ 주문 종료 조건: 핵심 정보 모두 있고, 더 물을 게 없다고 LLM이 판단했을 때
+        # 주문이 끝났다면 최종 멘트도 반환
         if (self.order.dinner and self.order.style and self.order.delivery_date
             and data.get("missing_info") == []):
-            self.say(self.final_confirmation())
+            final_msg = self.final_confirmation()
+            self.say(final_msg)
             self._maybe_click_order()
             self.state = State.END
+            return final_msg
 
+        # 기본적으로는 reply 리턴
+        return reply
 
     def _apply_llm_decision(self, data: dict):
         reply = data.get("reply_ko") or ""
