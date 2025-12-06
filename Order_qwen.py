@@ -1,9 +1,9 @@
 from __future__ import annotations
-import os, re, json, wave, tempfile, collections
+import re, json, wave, tempfile, collections
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List, Any
+from typing import Dict, Optional, Tuple, List
 
 # ===== 오디오 / VAD / STT =====
 import numpy as np
@@ -138,29 +138,6 @@ def parse_delivery_date(text: str) -> Optional[str]:
         except Exception:
             return None
     return None
-
-def extract_item_and_value(text: str) -> Optional[Tuple[str, int, bool]]:
-    """아이템, 값, is_absolute(절대치 여부)을 추출.
-       예: "바게트 6개로" → (BAGUETTE, 6, True)
-           "샴페인 2병 더" → (CHAMPAGNE, 2, False)
-    """
-    t = text.lower().strip()
-    item_key = None
-    for k, v in ITEM_ALIASES.items():
-        if k in t:
-            item_key = v; break
-    if not item_key:
-        return None
-    m = NUM_PAT.search(t)
-    if not m:
-        return None
-    n = int(m.group(1))
-    abs_flag = ("로" in t or "으로" in t or "변경" in t)
-    if ("더" in t or "+" in t or "추가" in t) and not abs_flag:
-        return (item_key, n, False)
-    if ("빼" in t or "줄" in t or "-" in t) and not abs_flag:
-        return (item_key, -n, False)
-    return (item_key, n, True)
 
 def extract_items_and_values(text: str) -> List[Tuple[str, int, bool]]:
     """
@@ -427,7 +404,7 @@ class DialogueManager:
                 self.state = State.GOT_DINNER
                 return
             if is_recommend_request(user_text):
-                self.say("무슨 기념일이신지 한 마디로 알려주시면 1~2가지로 제안드리겠습니다.")
+                self.say("무슨 기념일이신지 알려주시면 추천드리겠습니다.")
                 return
             if any(k in user_text for k in ["생일","생신","기념일","프로포즈","졸업","승진","돌잔치","환갑"]):
                 self.say("축하합니다. 프렌치 디너 또는 샴페인 축제 디너를 추천드립니다. 어떤 메뉴로 하시겠습니까?")
@@ -716,5 +693,22 @@ def run_loop():
         stream.stop_stream(); stream.close(); audio.terminate()
         print("프로그램이 종료되었습니다.")
 
+def run_text_loop():
+    print("키보드 입력 모드입니다. 종료하려면 '종료' 또는 'quit' 입력.\n")
+    DM.handle_user("")  # START 트리거 (LLM이 첫 인사 만들게)
+
+    while True:
+        try:
+            text = input("고객(키보드): ").strip()
+        except EOFError:
+            break
+
+        if text in ("종료", "quit", "exit"):
+            print("프로그램을 종료합니다.")
+            break
+
+        if text:
+            DM.handle_user(text)
+
 if __name__ == "__main__":
-    run_loop()
+    run_text_loop()

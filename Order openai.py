@@ -107,7 +107,7 @@ DATE_PAT = re.compile(r"(?:(\d{1,2})\s*월\s*(\d{1,2})\s*일)")
 
 def kst_today():
     return datetime.now(tz=KST).date()
-
+    
 def parse_delivery_date(text: str) -> Optional[str]:
     t = text.strip()
     now = kst_today()
