@@ -30,18 +30,16 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     state: str
+    actions: list
     order_summary: str | None = None
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    # FastAPI 서버에서 한 턴 처리
-    reply = dm.handle_user(req.text)
-
-    # 현재 주문 요약
-    order_summary = dm.order.summary_ko() if dm.order.dinner else None
+    result = dm.handle_user(req.text)
 
     return ChatResponse(
-        reply=reply,
+        reply=result["reply"],
         state=dm.state,
-        order_summary=order_summary,
+        actions=result["actions"],
+        order_summary=result["order_summary"],
     )
