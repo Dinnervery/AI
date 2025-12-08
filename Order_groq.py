@@ -518,15 +518,13 @@ class DialogueManager:
             self.emit("ClickOrder()")
             self._clicked = True
 
-    def handle_user(self, user_text: str) -> str:
+    def handle_user(self, user_text: str):
         user_text = (user_text or "").strip()
 
-        # START 진입
         if self.state == State.START:
             self.state = State.RUNNING
             user_text = user_text or "대화를 시작합니다."
 
-        # 배송일 후보 미리 파싱
         maybe_date = parse_delivery_date(user_text)
         if maybe_date:
             self.order.delivery_date = maybe_date
@@ -534,18 +532,19 @@ class DialogueManager:
         if not self.use_llm:
             msg = "현재 LLM이 비활성화돼 있습니다. 설정을 확인해 주세요."
             self.say(msg)
-            return msg
+            return {"reply": msg, "actions": [], "order_summary": None}
 
         data = llm_decide(user_text, self.order, self.history)
         if not data:
             msg = "입력을 잘 이해하지 못했습니다. 조금 더 구체적으로 다시 말씀해 주세요."
             self.say(msg)
-            return msg
+            return {"reply": msg, "actions": [], "order_summary": None}
 
-        # LLM 결정 적용
+        # 액션 적용
         self._apply_llm_decision(data)
 
         reply = data.get("reply_ko") or ""
+
         self.history.append({"role": "user", "content": user_text})
         if reply:
             self.history.append({"role": "assistant", "content": reply})
@@ -553,28 +552,40 @@ class DialogueManager:
         if len(self.history) > self.history_max:
             self.history = self.history[-self.history_max:]
 
-        # 주문이 끝났다면 최종 멘트도 반환
-        if (self.order.dinner and self.order.style and self.order.delivery_date
+        # 주문 완료
+        if (self.order.dinner and self.order.style and self.order.delivery_date 
             and data.get("missing_info") == []):
             final_msg = self.final_confirmation()
             self.say(final_msg)
             self._maybe_click_order()
             self.state = State.END
-            return final_msg
 
-        # 기본적으로는 reply 리턴
-        return reply
+            return {
+                "reply": final_msg,
+                "actions": self.last_actions,
+                "order_summary": self.order.summary_ko()
+            }
+
+        # 일반 return
+        return {
+            "reply": reply,
+            "actions": self.last_actions,
+            "order_summary": self.order.summary_ko() if self.order.dinner else None
+        }
 
     def _apply_llm_decision(self, data: dict):
         reply = data.get("reply_ko") or ""
         acts: List[dict] = data.get("actions", [])
         miss: List[str] = data.get("missing_info", [])
 
-        # 1) LLM 자연어 응답 출력
+        # 1) reply 출력
         if reply:
             self.say(reply)
 
-        # 2) 액션 반영(검증된 것만 들어옴)
+        # ⭐ 2) 이번 턴의 actions 저장
+        self.last_actions = acts
+
+        # 3) 액션 반영
         for a in acts:
             t = a.get("type")
             if t == "SelectDinner":
@@ -606,11 +617,12 @@ class DialogueManager:
                 self._handle_goback(miss)
                 self.emit("GoBack()")
 
-        # 3) missing_info 기반 상태 힌트(대화는 LLM이 알아서 하므로 상태는 최소만)
+        # 4) 상태 갱신
         if "deliveryDate" in miss:
             self.state = State.ASK_DELIVERY_DATE
         else:
             self.state = State.RUNNING
+
 
     def _handle_goback(self, next_missing: List[str]):
         if not next_missing:
